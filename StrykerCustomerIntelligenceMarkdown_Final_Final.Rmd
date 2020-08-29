@@ -1,0 +1,306 @@
+---
+title: "Stryker Customer Intelligence Tutorial"
+author: "Blake Tindol"
+date: "8/8/2020"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/blake/OneDrive/Stryker Project/Country Leaflet Information Dashboard")
+options(scipen = 999)
+if(!require("pacman")){
+  install.packages("pacman")
+}
+pacman::p_load(dplyr, data.table,lubridate,zoo,riem,tidyr,countrycode,RCurl,stringr,tidyverse,shiny,miniUI,taskscheduleR,gtrendsR,tidycensus,sf,leaflet,mapview,viridis,tidyquant,tigris,tmap,sf,maps,tidycensus,xts,ggsflabel,scales,tmaptools,purrr,plotly.hrbrthemes,DT) 
+
+#Double confirming package loading
+x <- c("lubridate","data.table","zoo","riem","dplyr","tidyr","countrycode","RCurl","stringr","tidyverse","shiny","miniUI","taskscheduleR","gtrendsR","tidycensus","sf","leaflet","mapview","viridis","tidyquant","tigris","tmap","sf","maps","tidycensus","xts","ggsflabel","scales","tmaptools","purrr","plotly","hrbrthemes","DT")
+lapply(x, require, character.only = TRUE)
+
+# Load workspace with variables
+load("StrykerIntelligenceWaltkthroughWorkspace.rdata")
+# Get state information to loop over
+stateid <- read.csv("statesid.csv");stateid <- stateid$state_id
+
+# census key code
+census_api_key("e3a3dbad3edfa4d96cb59f65931694b311565c63",install = TRUE,overwrite = TRUE)
+
+# Census variable list
+all_vars_acs5 <- load_variables(year = 2018, dataset = "acs5") # read all the variable list
+all_vars_acs5
+
+# Interactive plots
+options(tigris_use_cache = TRUE)
+
+# Remove missing values from dataframe for now
+countyvariables <- na.omit(countySocialVulnerability)
+
+```
+
+## Census variables at the county level for the United States
+Variables include: <br>
+<strong> z_Poverty:</strong> z-score for percent under poverty line<br>
+<strong> z_Nonwhite:</strong>  z-score for percent non-white (socially vulnerable minorities)<br>
+<strong> z_Under5:</strong> z-score for percent of individuals under 5 years old (vulnerable to health issues)<br>
+<strong> z_Over64: </strong>  z-score for percent of individuals over 64 years old (vulnerable to health issues)<br>
+<strong> z_CoveredVulnerableAge:</strong> z-score for percent of people 5 years old or under and or 64 years old and older and have health insurance<br>
+<strong> totalpopulation:</strong> total population<br>
+<strong> VulIndex:</strong> People under 5, over 64, non-White and poor index<br>
+<strong> PercentIncreaseInPopulation: </strong>percent increase in population from 2005-2018<br>
+<strong> PercentcoveredinsuranceInvulnerableAge:</strong> Total actual number in county that is insured in vulnerable age groups<br>
+<strong> TotalIncreaseInPopulation:</strong> Total actual number in county of population growth from 2005-2018<br>
+<strong> PopulationToGrowthRateRatio:</strong> population divided by growth rate for 2005-2018
+
+```{r variable,include = FALSE}
+max_poverty <- max(countyvariables$z_Poverty)
+min_poverty <- min(countyvariables$z_Poverty)
+max_Nonwhite <- max(countyvariables$z_Nonwhite)
+min_Nonwhite <- min(countyvariables$z_Nonwhite)
+max_Under5 <- max(countyvariables$z_Under5)
+min_Under5 <- min(countyvariables$z_Under5)
+max_Over64 <- max(countyvariables$z_Over64)
+min_Over64 <- min(countyvariables$z_Over64)
+max_CoveredVulnerableAge <- max(countyvariables$z_CoveredVulnerableAge)
+min_CoveredVulnerableAge <- min(countyvariables$z_CoveredVulnerableAge)
+max_totalpopulation <- max(countyvariables$totalpopulation)
+min_totalpopulation <- min(countyvariables$totalpopulation)
+max_VulIndex <- max(countyvariables$VulIndex)
+min_VulIndex <- min(countyvariables$VulIndex)
+max_PercentIncreaseInPopulation <- max(countyvariables$PercentIncreaseInPopulation)
+min_PercentIncreaseInPopulation <- min(countyvariables$PercentIncreaseInPopulation)
+max_PercentcoveredinsuranceInvulnerableAge <- max(countyvariables$PercentcoveredinsuranceInvulnerableAge)
+min_PercentcoveredinsuranceInvulnerableAge <- min(countyvariables$PercentcoveredinsuranceInvulnerableAge)
+max_TotalIncreaseInPopulation <- max(countyvariables$TotalIncreaseInPopulation)
+min_TotalIncreaseInPopulation <- min(countyvariables$TotalIncreaseInPopulation)
+max_PopulationToGrowthRateRatio <- max(countyvariables$PopulationToGrowthRateRatio)
+min_PopulationToGrowthRateRatio <- min(countyvariables$PopulationToGrowthRateRatio)
+```
+
+```{r datatable, echo=FALSE}
+renderDT({
+  datatable(countyvariables)
+})
+  
+```
+
+# Social Vulnerability Index 
+(People of low income, 5 or below, 64 and above and non - white)
+
+```{r columnselection, echo=FALSE}
+#selectInput("SelectColumn","Select Column", choices = names(countyvariables), selected = "VulIndex" ,multiple = F)
+
+renderLeaflet({
+      m <- mapview(countyvariables, zcol = "VulIndex")
+      m@map
+
+    })
+
+
+```
+
+
+
+```{r new2,include = FALSE}
+# Order by top populated columns in decending order
+top_vulnerable1 <- countyvariables[order(-countyvariables$totalpopulation) , ]
+
+# filter for variables under 98th percentile allowing for cities that are big but have room to grow
+zz <- quantile(top_vulnerable1$totalpopulation, probs = c(0.98))
+zz <- as.numeric(paste(zz)) # make numeric
+
+#Only keep values under the 98th percentile 
+top_vulnerable <- top_vulnerable1[top_vulnerable1$totalpopulation <= zz,]
+top_vulnerable2 <- top_vulnerable[1:10,c("NAME","PercentIncreaseInPopulation")]
+top_vulnerable3 <- top_vulnerable2[order(-top_vulnerable2$PercentIncreaseInPopulation),c("NAME","PercentIncreaseInPopulation")]
+top_vulnerable3$PercentIncreaseInPopulation <- round(top_vulnerable3$PercentIncreaseInPopulation,digits = 3)
+
+
+```
+
+```{r new3,include= FALSE}
+ p<-ggplot(data=top_vulnerable3, aes(x=reorder(NAME, -PercentIncreaseInPopulation), y=PercentIncreaseInPopulation)) +
+    geom_bar(stat="identity", fill="steelblue")+
+       geom_text(aes(label=PercentIncreaseInPopulation), vjust=-0.3, size=3.5)+
+  theme_minimal()
+Top_Growing_Metros <- p + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+```
+# Hidalgo County Texas is the largest county<br> 
+(Under 98th percentile for population)<br>
+That also has the fastest growing population!
+
+```{r new4}
+Top_Growing_Metros
+```
+
+
+```{r new5,include = FALSE}
+HidalgoCountyTract <- get_acs(geography = "tract"
+                       , state = "TX",
+                       county = "Hidalgo",
+                       variables = c(totalpop2018 = "B01003_001",
+                                     Totalhealthcoverage = "B27001_001",
+                                     TotalcoverageMale = "B27001_002",
+                                     TotalcoverageMaleUnder6 = "B27001_003",
+                                     TotalcoverageMale65to74 = "B27001_024",
+                                     TotalcoverageMale75andolder = "B27001_027",
+                                     Totalcoveragefemale = "B27001_030",
+                                     TotalcoveragefemaleUnder6 = "B27001_031",
+                                     Totalcoveragefemale65to74 = "B27001_052",
+                                     Totalcoveragefemale75andolder = "B27001_055"),output = "wide",geometry = TRUE)
+
+ # Edit
+HidalgoCountyTract2 <- HidalgoCountyTract %>%
+   mutate(PercentcoveredinsuranceInvulnerableAge = (TotalcoverageMaleUnder6E + TotalcoverageMale65to74E + TotalcoverageMale75andolderE + TotalcoveragefemaleUnder6E + Totalcoveragefemale65to74E + Totalcoveragefemale75andolderE)/TotalhealthcoverageE) %>%
+   select(NAME, GEOID,totalpop2018E,TotalhealthcoverageE, TotalcoverageMaleE,TotalcoverageMaleUnder6E,TotalcoverageMale65to74E,TotalcoverageMale75andolderE,TotalcoveragefemaleE,TotalcoveragefemaleUnder6E,Totalcoveragefemale65to74E,Totalcoveragefemale75andolderE,PercentcoveredinsuranceInvulnerableAge,TotalhealthcoverageE,geometry)
+HidalgoCountyTract2$PercentcoveredinsuranceInvulnerableAge <- round(HidalgoCountyTract2$PercentcoveredinsuranceInvulnerableAge,digits = 3)
+```
+# Tracts in Hidalgo County <br>
+Understanding the percent of people with coverage that are vulnerable <br>
+(Yellow more vulnerable dark blue is less vulnerable)<br>
+Tract code 4821502040 (The brightest yellow is most vulnerable population)
+```{r news6}
+ mapview(HidalgoCountyTract2, zcol = "PercentcoveredinsuranceInvulnerableAge", legend = FALSE)
+
+```
+
+
+```{r news7,include = FALSE}
+ # Go to tract level 
+ # UNIQUE MAP!!!!!!!!!!!!!!!!!
+ Hidalgo_estimates <- get_estimates(geography = "county",
+                              product = "characteristics",
+                              breakdown = c("SEX", "AGEGROUP", "HISP","RACE"),
+                              breakdown_labels = TRUE,
+                              state = "TX",
+                              county = "Hidalgo")
+
+# TO GET ESTIMATES OF POPULATION CHARACTERISTICS
+compare <- filter(Hidalgo_estimates, str_detect(AGEGROUP, "^Age"),
+                   HISP != "Both Hispanic Origins",
+                   SEX != "Both sexes") %>%
+   mutate(value = ifelse(SEX == "Male", -value, value)) 
+
+SEX <- compare$SEX
+AGE <- compare$AGEGROUP
+VALUE <- compare$value
+RACE <- compare$RACE
+# PYRIMID PLOT POPULATION FOR EACH AGE GROUP
+population_by_age <- plot_ly(compare,x = VALUE, y = AGE, color  = SEX, type = 'bar', orientation = 'h',
+        hoverinfo = 'y+text+name', text = VALUE) %>%
+  layout(bargap = 0.1, barmode = 'overlay',
+         xaxis = list(tickmode = 'array', tickvals =  c(-40000, -30000,-20000,-10000, 0,10000,20000,30000, 40000),
+                      ticktext = c(-40000, -30000,-20000,-10000, 0,10000,20000,30000, 40000)))
+
+# PYRIMID PLOT POPULATION FOR EACH AGE GROUP
+population_by_race <- plot_ly(compare,x = VALUE, y = RACE, color  = SEX, type = 'bar', orientation = 'h',
+        hoverinfo = 'y+text+name', text = VALUE) %>%
+  layout(bargap = 0.1, barmode = 'overlay',
+         xaxis = list(tickmode = 'array', tickvals =  c(-40000, -30000,-20000,-10000, 0,10000,20000,30000, 40000),
+                      ticktext = c(-40000, -30000,-20000,-10000, 0,10000,20000,30000, 40000)))
+####################################################
+```
+# Hidalgo County Demographic Makeup <br>
+Population by age
+```{r news8}
+# PYRIMID PLOT POPULATION FOR EACH AGE GROUP
+population_by_age
+```
+# Hidalgo County Demographic Makeup <br>
+Population by race
+```{r news9}
+population_by_race
+```
+
+# Mobility and Covid count for the date 2020-03-23
+```{r news10}
+
+renderLeaflet({
+      z <-mapview(countySocialVulnerability4, zcol="workplaces",legend= TRUE) 
+
+
+      z@map
+
+    })
+```
+
+```{r news11,include = FALSE}
+# Extract covid information for Harris County USA
+  install.packages("hrbrthemes",lib = "C:/R/R-4.0.2/library")
+  library(hrbrthemes)
+final_covid_harrison <- final_covid[final_covid$state =="Texas" & final_covid$county == "Hidalgo",]
+
+  # Usual area chart
+  p <- final_covid_harrison %>%
+    ggplot( aes(x=date, y=confirmed)) +
+    geom_area(fill="#69b3a2", alpha=0.5) +
+    geom_line(color="#69b3a2") +
+    ylab("Covid confirmed cases") +
+    ggtitle("Harrison county confirmed cases") + 
+    theme(plot.title = element_text(lineheight=.8, face="bold"))
+    theme_ipsum()
+  
+  # Turn it interactive with ggplotly
+  confirmed_cases <- ggplotly(p)
+  
+  final_mobility_harrison <- mobility2[mobility2$state =="Texas" & mobility2$county == "Hidalgo County",]
+
+ install.packages("TSstudio",lib = "C:/R/R-4.0.2/library")
+  library(TSstudio)
+#  
+ final_mobility_harrison2 <- final_mobility_harrison[c(6,9)]
+ final_mobility_harrison2$date <- as.character(final_mobility_harrison2$date)
+  final_mobility_harrison2$date <- as.POSIXct(final_mobility_harrison2$date, format="%Y-%m-%d")
+final_mobility_harrison2 <- final_mobility_harrison2[order(final_mobility_harrison2$date),]
+
+
+```
+
+```{r news12}
+confirmed_cases
+```
+
+ <!-- ```{r news13} -->
+ <!--   #Usual area chart -->
+ <!--    library(TSstudio) -->
+
+ <!--  ts_plot(final_mobility_harrison2, -->
+ <!--         title = "Hidalgo County Covid Mobility", -->
+ <!--         Xtitle = "Time", -->
+ <!--         Ytitle = "Percent decrease", -->
+ <!--         slider = TRUE) -->
+
+ <!-- ``` -->
+
+# Hidalgo County Mobility
+``` {r news, include = FALSE}
+   library(TSstudio)
+
+ hildalgo_mobilityz <-  ts_plot(final_mobility_harrison2,
+         title = "Hidalgo County Covid Mobility",
+         Xtitle = "Time",
+         Ytitle = "Percent decrease",
+         slider = TRUE)
+```
+
+``` {r new34}
+hildalgo_mobilityz
+```
+
+# What type of instruments are Texans looking for
+```{r news22, include = FALSE}
+today <- Sys.time()
+  ftoday <- paste(today)
+  ftoday <- strsplit(ftoday," ")[[1]][1] #Split the date and get it into proper format
+  var3 <- paste("2020-01-22",ftoday)
+  # Can we sell them beds
+  # Get information for Texas on these key words
+   res2 <- gtrends(c("Hosptial beds","Surgial knives","CPR Devices"), geo = c("US-TX"),time = var3)
+    res2 <- data.frame(res2$interest_over_time)  # 
+```
+
+ ```{r news30} -->
+  plot(res2) -->
+``` -->
