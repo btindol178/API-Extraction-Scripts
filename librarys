@@ -1,0 +1,3 @@
+pip install requests -- helps with get query
+pip install lxml     -- helps beautifulsoup parse xml
+pip install beautifulsoup4
